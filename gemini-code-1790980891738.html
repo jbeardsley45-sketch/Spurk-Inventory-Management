@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>HVAC Part Inventory</title>
+<link rel="icon" type="image/png" sizes="32x32" href="./tree-icon.png?v=2">
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background:#f4f6f3; color:#263126; }
+.app { max-width:600px; margin:0 auto; padding:16px; }
+header { padding:10px 0 20px; } header h1 { margin:0; font-size:28px; } header p { margin:5px 0 0; color:#687268; }
+.tabs { display:flex; gap:8px; margin-bottom:16px; }
+.tab { flex:1; padding:12px 8px; border:1px solid #ccd3cc; border-radius:8px; background:#fff; font-weight:bold; text-align:center; cursor:pointer; }
+.tab.active { background:#dfe9dc; border-color:#9aae96; }
+.card { background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; border:1px solid #dfe4df; }
+label { display:block; font-size:14px; font-weight:bold; margin-bottom:6px; }
+input, select { box-sizing:border-box; width:100%; padding:12px; border:1px solid #cbd2cb; border-radius:8px; font-size:16px; margin-bottom:12px; }
+button { min-height:48px; padding:12px 16px; border-radius:8px; border:1px solid #cbd2cb; background:#fff; font-size:16px; font-weight:bold; cursor:pointer; width:100%; }
+button.primary { background:#476b42; color:#fff; border-color:#476b42; }
+button.danger { background:#fff5f3; border-color:#e0aaa2; color:#8b3328; }
+button:active { transform:scale(0.98); }
+.lookup { display:flex; gap:8px; margin-bottom:12px; } .lookup input { flex:1; margin-bottom:0; } .lookup button { width:auto; }
+.part-header { display:flex; justify-content:space-between; gap:20px; align-items:center; }
+.part-name { font-size:21px; font-weight:bold; } .part-meta { color:#687268; margin-top:4px; }
+.quantity { text-align:right; } .quantity-label { font-size:12px; color:#687268; } .quantity-number { font-size:36px; font-weight:bold; }
+.move-buttons { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.inventory-row { display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #dfe4df; border-radius:9px; margin-bottom:8px; cursor:pointer; gap:12px; }
+.inventory-row:hover { background:#f7f9f6; }
+.part-row-left { display:flex; align-items:center; gap:12px; min-width:0; }
+.part-photo { width:58px; height:58px; object-fit:cover; border-radius:8px; border:1px solid #dfe4df; background:#eef2ed; }
+.part-row-name { font-weight:bold; } .part-row-meta { font-size:13px; color:#687268; margin-top:3px; } .part-row-quantity { font-size:20px; font-weight:bold; }
+.move-photo { width:90px; height:90px; object-fit:cover; border-radius:10px; border:1px solid #dfe4df; }
+.transaction { padding:12px; border-bottom:1px solid #e3e7e3; } .transaction:last-child { border-bottom:none; }
+.transaction-main { display:flex; justify-content:space-between; } .transaction-meta { margin-top:4px; color:#687268; font-size:13px; }
+.positive { color:#397238; } .negative { color:#9a3c32; } .hidden { display:none !important; }
+.message { margin-top:10px; font-size:14px; color:#596359; } .empty { color:#687268; padding:10px 0; }
+.scan-box { margin-top:12px; } .scan-status { padding:12px; border-radius:8px; background:#f1f5ef; margin-top:10px; font-size:14px; text-align:center; }
+.success { background:#e6f3e3; color:#285d28; font-weight:bold; }
+@media(max-width:400px){ .app { padding:12px; } }
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <h1>Part Inventory</h1>
+  <p>HVAC inventory management</p>
+</header>
+
+<div class="tabs">
+  <button class="tab active" id="inventoryTab">Inventory</button>
+  <button class="tab" id="moveTab">Move Parts</button>
+  <button class="tab" id="historyTab">History</button>
+</div>
+
+<section id="inventoryScreen">
+  <div class="card">
+    <label>Scan QR Code or Enter Part ID</label>
+    <div class="lookup">
+      <input id="partLookup" placeholder="e.g. PRT-101">
+      <button class="primary" id="openPartButton">Open</button>
+    </div>
+    
+    <button class="primary" id="scanButton">📷 Scan QR Code with Camera</button>
+
+    <div id="scannerWrap" class="scan-box hidden">
+      <div id="qr-reader" style="width:100%"></div>
+      <button id="stopScanButton" style="margin-top:10px;">Cancel Camera</button>
+    </div>
+    <div id="scanStatus" class="scan-status hidden"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <strong>Current Inventory</strong>
+      <button id="addPartButton" style="width:auto; min-height:36px; padding:6px 12px;">+ Part</button>
+    </div>
+    <div id="inventoryList"></div>
+  </div>
+</section>
+
+<section id="moveScreen" class="hidden">
+  <div class="card">
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+      <img id="selectedPartPhoto" class="move-photo" alt="">
+      <div>
+        <div class="part-name" id="selectedPartName">---</div>
+        <div class="part-meta" id="selectedPartMeta">---</div>
+      </div>
+    </div>
+    <div class="part-header">
+      <div></div>
+      <div class="quantity">
+        <div class="quantity-label">ON HAND</div>
+        <div class="quantity-number" id="selectedPartQuantity">0</div>
+      </div>
+    </div>
+    <br>
+    <label for="jobIdInput">Job # / Location (Required for Removal)</label>
+    <input id="jobIdInput" placeholder="e.g. Job #4082 - Oak St AC Repair">
+
+    <label for="moveQuantity">Quantity</label>
+    <input id="moveQuantity" type="number" min="1" step="1" value="1">
+    <div class="move-buttons">
+      <button class="danger" id="removeButton">− Remove / Scan Out</button>
+      <button class="primary" id="addButton">+ Add to Stock</button>
+    </div>
+    <div class="message" id="moveMessage"></div>
+  </div>
+</section>
+
+<section id="historyScreen" class="hidden">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+      <strong>Transaction History</strong>
+      <span class="message" id="transactionCount"></span>
+    </div>
+    <div id="historyList"></div>
+  </div>
+</section>
+
+<section class="card hidden" id="addPartForm">
+  <h3 style="margin-top:0">Add Part</h3>
+  <label for="newPartId">Part ID</label><input id="newPartId" placeholder="PRT-101">
+  <label for="newPartName">Part Name / Description</label><input id="newPartName" placeholder="35/5 MFD Capacitor">
+  <label for="newPartLocation">Storage Location</label><input id="newPartLocation" placeholder="Bin A-12">
+  <label for="newPartQuantity">Starting Quantity</label><input id="newPartQuantity" type="number" min="0" step="1" placeholder="10">
+  <label for="newPartPhoto">Photo URL (optional)</label><input id="newPartPhoto" placeholder="https://...">
+  <div style="display:flex;gap:8px">
+    <button id="cancelPartButton">Cancel</button>
+    <button class="primary" id="savePartButton">Save Part</button>
+  </div>
+  <div class="message" id="newPartMessage"></div>
+</section>
+</div>
+
+<script>
+"use strict";
+function formatPhotoUrl(url) {
+  if (!url) return '';
+  url = url.trim();
+
+  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=)|lh3\.googleusercontent\.com\/d\/)([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+  }
+
+  return url;
+}
+
+// PASTE YOUR DEPLOYED GOOGLE APPS SCRIPT WEB APP URL HERE:
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyun8UxWmO0pXjN4cE5pDIBV0K6HeQAPRTIEf1KV3SETYCbe9-YOtpCisa4RHylySQx2g/exec";
+
+let inventory = {}, selectedPartId = "", transactions = [];
+let html5QrCode = null;
+
+// Fetch data from Google Sheet via API
+function fetchSheetData() {
+  fetch(GAS_API_URL)
+    .then(res => res.json())
+    .then(data => {
+      if(data.error) throw new Error(data.error);
+      inventory = {};
+      const parts = data.parts || data.plants || [];
+      parts.forEach(p => { inventory[p.id] = p; });
+      if(!selectedPartId && Object.keys(inventory).length > 0){
+        selectedPartId = Object.keys(inventory)[0];
+      }
+      transactions = data.transactions || [];
+      renderInventory();
+      renderSelectedPart();
+      renderHistory();
+    })
+    .catch(err => {
+      alert("Error connecting to Google Sheet: " + err.message);
+    });
+}
+
+// Send POST requests to Google Sheet API
+function sendApiRequest(payload, onSuccess, onError) {
+  fetch(GAS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.error) throw new Error(data.error);
+    onSuccess(data);
+  })
+  .catch(err => {
+    if (onError) onError(err);
+    else alert("Error: " + err.message);
+  });
+}
+
+function escapeHTML(v){ return String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+
+function showScreen(screen){
+  ["inventory","move","history"].forEach(s => {
+    document.getElementById(s+"Screen").classList.toggle("hidden", s !== screen);
+    document.getElementById(s+"Tab").classList.toggle("active", s === screen);
+  });
+  if(screen === "inventory") renderInventory();
+  if(screen === "move") renderSelectedPart();
+  if(screen === "history") renderHistory();
+  window.scrollTo(0,0);
+}
+
+function renderInventory(){
+  const c = document.getElementById("inventoryList");
+  c.innerHTML = "";
+  Object.values(inventory).forEach(p => {
+    const photoUrl = formatPhotoUrl(p.photo);
+    const r = document.createElement("div");
+    r.className = "inventory-row";
+    r.innerHTML = `<div class="part-row-left"><img class="part-photo" src="${escapeHTML(photoUrl)}" alt=""><div><div class="part-row-name">${escapeHTML(p.name)}</div><div class="part-row-meta">${escapeHTML(p.id)} · ${escapeHTML(p.location)}</div></div></div><div class="part-row-quantity">${p.quantity}</div>`;
+    r.onclick = () => { selectedPartId = p.id; showScreen("move"); };
+    c.appendChild(r);
+  });
+}
+
+function renderSelectedPart(){
+  const p = inventory[selectedPartId];
+  if(!p){ showScreen("inventory"); return; }
+  const photoUrl = formatPhotoUrl(p.photo);
+  document.getElementById("selectedPartPhoto").src = photoUrl;
+  document.getElementById("selectedPartPhoto").alt = p.name;
+  document.getElementById("selectedPartName").textContent = p.name;
+  document.getElementById("selectedPartMeta").textContent = `${p.id} · ${p.location}`;
+  document.getElementById("selectedPartQuantity").textContent = p.quantity;
+}
+
+function changeInventory(amount){
+  const p = inventory[selectedPartId], q = Number(document.getElementById("moveQuantity").value);
+  const jobId = document.getElementById("jobIdInput").value.trim();
+
+  if(!p) return;
+  if(!Number.isInteger(q) || q < 1) return showMoveMessage("Enter a whole number greater than zero.");
+  
+  if(amount < 0) {
+    if(!jobId) return showMoveMessage("Please enter a Job # / Location to scan out parts.");
+    if(q > p.quantity) return showMoveMessage("You cannot remove more parts than are currently in stock.");
+  }
+
+  const action = amount > 0 ? "Add" : "Remove";
+
+  sendApiRequest({
+    action: "updateInventory",
+    partId: p.id,
+    plantId: p.id, // Backwards compatibility for script
+    inventoryAction: action,
+    changeQty: q,
+    jobId: jobId
+  }, function(response) {
+    p.quantity = response.newQuantity;
+    transactions.unshift({
+      timestamp: response.timestamp,
+      partId: p.id,
+      partName: p.name,
+      action: action === "Add" ? "Added" : "Scanned Out",
+      quantity: q,
+      balance: response.newQuantity,
+      jobId: jobId
+    });
+    renderSelectedPart();
+    const jobInfoText = (action === "Remove" && jobId) ? ` for ${jobId}` : "";
+    showMoveMessage(`${action === "Add" ? "Added" : "Scanned out"} ${q}${jobInfoText}. New balance: ${p.quantity}`, true);
+    if(amount < 0) document.getElementById("jobIdInput").value = "";
+  }, function(err) {
+    showMoveMessage("Failed to update Google Sheet: " + err.message);
+  });
+}
+
+function showMoveMessage(m, success = false){
+  const e = document.getElementById("moveMessage");
+  e.textContent = m;
+  e.className = "message" + (success ? " success" : "");
+}
+
+function renderHistory(){
+  const c = document.getElementById("historyList");
+  document.getElementById("transactionCount").textContent = `${transactions.length} transactions`;
+  c.innerHTML = "";
+  if(!transactions.length){ c.innerHTML = '<div class="empty">No transactions yet.</div>'; return; }
+  transactions.slice().reverse().forEach(t => {
+    const d = new Date(t.timestamp), r = document.createElement("div");
+    r.className = "transaction";
+    const isAdd = t.action === "Added" || t.action === "Starting inventory";
+    const partTitle = t.partName || t.plantName || "Part";
+    const pId = t.partId || t.plantId || "";
+    const jobDetail = t.jobId ? ` · Job: ${t.jobId}` : "";
+    r.innerHTML = `<div class="transaction-main"><strong>${escapeHTML(t.action)} ${t.quantity}</strong><strong class="${isAdd ? "positive" : "negative"}">${isAdd ? "+" : "-"}${t.quantity}</strong></div><div class="transaction-meta">${escapeHTML(partTitle)} · ${escapeHTML(pId)}${escapeHTML(jobDetail)}</div><div class="transaction-meta">${d.toLocaleString()} · Balance: ${t.balance}</div>`;
+    c.appendChild(r);
+  });
+}
+
+function openPart(){
+  const id = document.getElementById("partLookup").value.trim().toUpperCase();
+  if(!inventory[id]) return alert("Part not found in Google Sheets.");
+  selectedPartId = id;
+  showScreen("move");
+}
+
+function saveNewPart(){
+  const id = document.getElementById("newPartId").value.trim().toUpperCase(),
+        name = document.getElementById("newPartName").value.trim(),
+        location = document.getElementById("newPartLocation").value.trim(),
+        quantity = Number(document.getElementById("newPartQuantity").value),
+        photo = document.getElementById("newPartPhoto").value.trim(),
+        msg = document.getElementById("newPartMessage");
+
+  if(!id || !name || !location || !Number.isInteger(quantity) || quantity < 0){
+    msg.textContent = "Please complete all fields correctly.";
+    return;
+  }
+  if(inventory[id]){
+    msg.textContent = "That Part ID already exists.";
+    return;
+  }
+
+  sendApiRequest({
+    action: "addNewPart",
+    id: id,
+    name: name,
+    location: location,
+    quantity: quantity,
+    photo: photo
+  }, function() {
+    inventory[id] = { id, name, location, quantity, photo };
+    selectedPartId = id;
+    closeNewPartForm();
+    renderInventory();
+    showScreen("move");
+  }, function(err) {
+    msg.textContent = "Error saving part: " + err.message;
+  });
+}
+
+function closeNewPartForm(){
+  document.getElementById("addPartForm").classList.add("hidden");
+  ["newPartId","newPartName","newPartLocation","newPartQuantity","newPartPhoto"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("newPartMessage").textContent = "";
+}
+
+// Live WebRTC Camera Scanner
+async function startScanner(){
+  const wrap = document.getElementById("scannerWrap");
+  const status = document.getElementById("scanStatus");
+  wrap.classList.remove("hidden");
+  status.classList.remove("hidden");
+  status.className = "scan-status";
+  status.textContent = "Starting camera…";
+
+  try {
+    html5QrCode = new Html5Qrcode("qr-reader");
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      onScanSuccess,
+      () => {}
+    );
+    status.textContent = "Point camera at a Part QR code.";
+  } catch(e) {
+    status.textContent = "Could not access camera. Make sure camera permissions are allowed.";
+    console.error(e);
+  }
+}
+
+async function stopScanner(){
+  if(html5QrCode){
+    try { await html5QrCode.stop(); } catch(e){}
+    try { html5QrCode.clear(); } catch(e){}
+  }
+  html5QrCode = null;
+  document.getElementById("scannerWrap").classList.add("hidden");
+}
+
+async function onScanSuccess(decodedText){
+  const id = decodedText.trim().toUpperCase();
+  const status = document.getElementById("scanStatus");
+  if(!inventory[id]){
+    status.classList.remove("hidden");
+    status.textContent = `Scanned "${decodedText}" — No matching Part ID.`;
+    return;
+  }
+  await stopScanner();
+  status.classList.add("hidden");
+  selectedPartId = id;
+  showScreen("move");
+  showMoveMessage(`✓ Part QR code scanned: ${id}`, true);
+}
+
+document.getElementById("inventoryTab").onclick = () => showScreen("inventory");
+document.getElementById("moveTab").onclick = () => showScreen("move");
+document.getElementById("historyTab").onclick = () => showScreen("history");
+document.getElementById("openPartButton").onclick = openPart;
+document.getElementById("partLookup").onkeydown = e => { if(e.key === "Enter") openPart(); };
+document.getElementById("scanButton").onclick = startScanner;
+document.getElementById("stopScanButton").onclick = stopScanner;
+document.getElementById("addButton").onclick = () => changeInventory(1);
+document.getElementById("removeButton").onclick = () => changeInventory(-1);
+document.getElementById("addPartButton").onclick = () => document.getElementById("addPartForm").classList.remove("hidden");
+document.getElementById("cancelPartButton").onclick = closeNewPartForm;
+document.getElementById("savePartButton").onclick = saveNewPart;
+
+fetchSheetData();
+</script>
+</body>
+</html>
